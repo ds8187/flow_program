@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
+
 typedef struct {
     char *name;
     char *command;
@@ -13,6 +14,28 @@ typedef struct {
     char *from;
     char*to;
 } pipeDef;
+
+typedef struct {
+    char *name;
+    int *partCount;
+    char **parts;
+} concatDef;
+
+typedef struct {
+    char *name;
+    int *partCount;
+    char **parts;
+} concatDef;
+
+typedef struct {
+    char *name;
+    char *from;
+} stderrDef;
+
+typedef struct {
+    char *name;
+    int *fileName;
+} fileDef;
 
 void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDef **pipes, int *pipeCount) {
     FILE *fp = fopen(filename, "r");
@@ -115,6 +138,10 @@ int main(int argc, char *argv[]) {
 
     nodeDef *nodes = NULL;
     pipeDef *pipes = NULL;
+    concatDef *concats = NULL;
+    stderrDef *stderrs = NULL;
+    fileDef *files = NULL;
+
     int nodeCount = 0, pipeCount = 0;
 
     parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount);
