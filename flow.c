@@ -23,12 +23,6 @@ typedef struct {
 
 typedef struct {
     char *name;
-    int *partCount;
-    char **parts;
-} concatDef;
-
-typedef struct {
-    char *name;
     char *from;
 } stderrDef;
 
