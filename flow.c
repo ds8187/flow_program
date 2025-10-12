@@ -231,14 +231,7 @@ void parseFlowStderr(const char *filename, stderrDef **stderrs, int *stderrCount
      fclose(fp);
 }
 
-
-void freeMem(
-    nodeDef *nodes, int nodeCount,
-    pipeDef *pipes, int pipeCount,
-    concatDef *concats, int concatCount,
-    stderrDef *stderrs, int stderrCount
-    //fileDef *files, int fileCount
-) {
+void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount) {
     // --- Free nodes ---
     for (int i = 0; i < nodeCount; i++) {
         free(nodes[i].name);
@@ -285,13 +278,104 @@ void freeMem(
     */
 }
 
+char **splitCommand(const char *command) {
+    char **args = NULL;
+    int count = 0;
+    char *cmdCopy = strdup(command);
+    char *token = strtok(cmdCopy, " ");
+    while (token) {
+        args = realloc(args, sizeof(char*) * (count + 1));
+        args[count++] = strdup(token);
+        token = strtok(NULL, " ");
+    }
+    args = realloc(args, sizeof(char*) * (count + 1));
+    args[count] = NULL;
+    free(cmdCopy);
+    return args;
+}
+
+void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount) { 
+    // 1. --- BASE CASE: Check if it's a NODE ---
+    for (int i = 0; i < nodeCount; i++) {
+        if (strcmp(nodes[i].name, blockName) == 0) {
+            
+            pid_t pid = fork();
+            if (pid == 0) {
+                char **args = splitCommand(nodes[i].command);
+                execvp(args[0], args);
+                perror("execvp failed");
+                exit(1);   
+            }    
+            else if (pid > 0) {
+                wait(NULL);
+            }
+            else {
+                perror("fork failed");
+                exit(1);
+            }
+        }
+    }
+
+    // --- 2. PIPE CASE ---
+    for (int i = 0; i < pipeCount; i++) {
+        if (strcmp(pipes[i].name, blockName) == 0) {
+
+            int fd[2];
+            if (pipe(fd) == -1) {
+                perror("pipe failed");
+                exit(1);
+            }
+
+            pid_t pid = fork();
+            if (pid == -1) {
+                perror("fork failed");
+                exit(1);
+            }
+
+            if (pid == 0) {
+                // --- CHILD PROCESS: executes the 'from' side ---
+                close(fd[0]);            // Close read end
+                dup2(fd[1], STDOUT_FILENO); // Redirect stdout to pipe write end
+                close(fd[1]);
+                
+                // Recursively execute whatever "from" points to
+                executeFlow(pipes[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+                exit(0);
+            } 
+            else {
+                // --- PARENT PROCESS: executes the 'to' side ---
+                close(fd[1]);            // Close write end
+                dup2(fd[0], STDIN_FILENO); // Redirect stdin to pipe read end
+                close(fd[0]);
+
+                // Recursively execute whatever "to" points to
+                executeFlow(pipes[i].to, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+                wait(NULL);
+                return;
+            }
+        }
+    }
+
+
+    
+
+        
+
+
+    // 3. --- CONCAT CASE ---
+
+
+
+}
+
+
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
+    if (argc < 3) {
         fprintf(stderr, "Usage: %s <flowfile>\n", argv[0]);
         return 1;
     }
-
+    
     // --- Allocate and initialize all structures ---
     nodeDef *nodes = NULL;
     pipeDef *pipes = NULL;
@@ -307,7 +391,7 @@ int main(int argc, char *argv[]) {
     parseFlowConcats(argv[1], &concats, &concatCount);
     parseFlowStderr(argv[1], &stderrs, &stderrCount);
     // parseFlowFiles(argv[1], &files, &fileCount);  // uncomment if implemented
-
+    /*
     // --- Print out parsed data ---
     printf("\n=== Parsed Nodes ===\n");
     for (int i = 0; i < nodeCount; i++) {
@@ -340,7 +424,7 @@ int main(int argc, char *argv[]) {
         printf("  Name: %s\n", stderrs[i].name);
         printf("  From: %s\n", stderrs[i].from ? stderrs[i].from : "(none)");
     }
-    /*
+    
     printf("\n=== Parsed Files ===\n");
     for (int i = 0; i < fileCount; i++) {
         printf("File %d:\n", i + 1);
@@ -350,8 +434,12 @@ int main(int argc, char *argv[]) {
     */
 
     // --- Cleanup all allocated memory ---
+
+
+    executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+
     freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount); //, files, fileCount);
 
-    printf("\nAll memory freed successfully.\n");
+    //printf("\nAll memory freed successfully.\n");
     return 0;
 }
