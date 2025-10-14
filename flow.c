@@ -32,6 +32,7 @@ typedef struct {
     int *fileName;
 } fileDef;
  */
+void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount);
 
 void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDef **pipes, int *pipeCount, concatDef **concats, int *concatCount, stderrDef **stderrs, int *stderrCount) {
     FILE *fp = fopen(filename, "r");
@@ -46,19 +47,37 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
     concatDef *currentConcat = NULL;
     stderrDef *currentStderr = NULL;
 
+    int nodeCap = 0, pipeCap = 0, concatCap = 0, stderrCap = 0;
+    
     while (fgets(lineBuffer, sizeof(lineBuffer), fp)) {
         lineBuffer[strcspn(lineBuffer, "\n")] = '\0';
         if (strlen(lineBuffer) == 0)
             continue;
 
-        // ===== NODE SECTION =====
+        // --- NODE SECTION ---
         if (strncmp(lineBuffer, "node=", 5) == 0) {
-            *nodes = realloc(*nodes, (*nodeCount + 1) * sizeof(nodeDef));
-            if (!*nodes) {
-                perror("realloc failed for nodes");
-                fclose(fp);
-                exit(1);
+            if (*nodes == NULL) {
+                nodeCap = 1;
+                *nodes = malloc(nodeCap * sizeof(nodeDef));
+                if (!*nodes) {
+                    perror("malloc failed for nodes");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+            } 
+            else if (*nodeCount >= nodeCap) {
+                nodeCap *= 2;
+                nodeDef *tmp = realloc(*nodes, nodeCap * sizeof(nodeDef));
+                if (!tmp) {
+                    perror("realloc failed for nodes");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+                *nodes = tmp;
             }
+
             currentNode = &(*nodes)[(*nodeCount)++];
             currentNode->name = strdup(lineBuffer + 5);
             currentNode->command = NULL;
@@ -70,14 +89,30 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
             continue;
         }
 
-        // ===== PIPE SECTION =====
+        // --- PIPE SECTION ---
         if (strncmp(lineBuffer, "pipe=", 5) == 0) {
-            *pipes = realloc(*pipes, (*pipeCount + 1) * sizeof(pipeDef));
-            if (!*pipes) {
-                perror("realloc failed for pipes");
-                fclose(fp);
-                exit(1);
+            if (*pipes == NULL) {
+                pipeCap = 1;
+                *pipes = malloc(pipeCap * sizeof(pipeDef));
+                if (!*pipes) {
+                    perror("malloc failed for pipes");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+            } 
+            else if (*pipeCount >= pipeCap) {
+                pipeCap *= 2;
+                pipeDef *tmp = realloc(*pipes, pipeCap * sizeof(pipeDef));
+                if (!tmp) {
+                    perror("realloc failed for pipes");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+                *pipes = tmp;
             }
+
             currentPipe = &(*pipes)[(*pipeCount)++];
             currentPipe->name = strdup(lineBuffer + 5);
             currentPipe->from = NULL;
@@ -95,14 +130,30 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
             continue;
         }
 
-        // ===== CONCAT SECTION =====
+        // --- CONCAT SECTION ---
         if (strncmp(lineBuffer, "concatenate=", 12) == 0) {
-            *concats = realloc(*concats, (*concatCount + 1) * sizeof(concatDef));
-            if (!*concats) {
-                perror("realloc failed for concats");
-                fclose(fp);
-                exit(1);
+            if (*concats == NULL) {
+                concatCap = 1;
+                *concats = malloc(concatCap * sizeof(concatDef));
+                if (!*concats) {
+                    perror("malloc failed for concats");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+            } 
+            else if (*concatCount >= concatCap) {
+                concatCap *= 2;
+                concatDef *tmp = realloc(*concats, concatCap * sizeof(concatDef));
+                if (!tmp) {
+                    perror("realloc failed for concats");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+                *concats = tmp;
             }
+
             currentConcat = &(*concats)[(*concatCount)++];
             memset(currentConcat, 0, sizeof(concatDef));
             currentConcat->name = strdup(lineBuffer + 12);
@@ -129,14 +180,30 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
             continue;
         }
 
-        // ===== STDERR SECTION =====
+        // --- STDERR SECTION ---
         if (strncmp(lineBuffer, "stderr=", 7) == 0) {
-            *stderrs = realloc(*stderrs, (*stderrCount + 1) * sizeof(stderrDef));
-            if (!*stderrs) {
-                perror("realloc failed for stderrs");
-                fclose(fp);
-                exit(1);
+            if (*stderrs == NULL) {
+                stderrCap = 1;
+                *stderrs = malloc(stderrCap * sizeof(stderrDef));
+                if (!*stderrs) {
+                    perror("malloc failed for stderrs");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+            } 
+            else if (*stderrCount >= stderrCap) {
+                stderrCap *= 2;
+                stderrDef *tmp = realloc(*stderrs, stderrCap * sizeof(stderrDef));
+                if (!tmp) {
+                    perror("realloc failed for stderrs");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    exit(1);
+                }
+                *stderrs = tmp;
             }
+
             currentStderr = &(*stderrs)[(*stderrCount)++];
             currentStderr->name = strdup(lineBuffer + 7);
             currentStderr->from = NULL;
