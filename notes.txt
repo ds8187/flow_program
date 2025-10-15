@@ -3,14 +3,16 @@
 
                      Read: to wc ( | wc)
                      / 
-pipe: shenanigan - fork x2                                               Read: to sed_o_u ( | 's/o/u/g')
+pipe: shenanigan - fork x2                                               Read: to sed_o_u ( | sed 's/o/u/g')
                      \                                                    /
                      call cat foo.txt ; Write: from: pipe: foo_to_fuu - fork x2
                                                                           \
                                                                           write: from: cat_foo (cat foo.txt | )
 
 
-                       call cat foo.txt (cat foo.txt | sed 's/o/u/g') | wc  
+                       call cat foo.txt (cat foo.txt | sed 's/o/u/g') | wc 
+
+                            cat foo.txt ; (cat foo.txt | sed '...') | wc 
 
 
 
@@ -22,3 +24,31 @@ pipe: shenanigan - fork x2                                               Read: t
                     arr [2]
                     arr[0] = cat foo.txt
                     arr[1] = sed ...
+
+
+
+Nodes can be used as based case
+
+tomasecheverri@MacBookPro Assignment 2 % ls                                  
+complicated.flow        error.flow              filecount.flow          flow                    flow.c                  flowold.c               foo.txt                 forkpipetest.c          notes.txt
+tomasecheverri@MacBookPro Assignment 2 % mkdir a
+tomasecheverri@MacBookPro Assignment 2 % ls
+a                       complicated.flow        error.flow              filecount.flow          flow                    flow.c                  flowold.c               foo.txt                 forkpipetest.c          notes.txt
+tomasecheverri@MacBookPro Assignment 2 % mkdir a
+mkdir: a: File exists
+tomasecheverri@MacBookPro Assignment 2 % mkdir a | wc
+mkdir: a: File exists
+       0       0       0
+tomasecheverri@MacBookPro Assignment 2 % mkdir a |&  wc
+       1       4      22
+tomasecheverri@MacBookPro Assignment 2 % mkdir a 2
+mkdir: a: File exists
+tomasecheverri@MacBookPro Assignment 2 % mkdir a 2 >&1 
+mkdir: a: File exists
+mkdir: 2: File exists
+tomasecheverri@MacBookPro Assignment 2 % mkdir a 2 >&1 | wc
+mkdir: a: File exists
+mkdir: 2: File exists
+       0       0       0
+tomasecheverri@MacBookPro Assignment 2 % mkdir a 2>&1 | wc  
+       1       4      22

@@ -26,15 +26,66 @@ typedef struct {
     char *from;
 } stderrDef;
 
-/*
 typedef struct {
     char *name;
-    int *fileName;
+    char *fileName;
 } fileDef;
- */
-void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount);
+ 
+void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount, fileDef* files, int fileCount) {
+    if (!nodes && !pipes && !concats && !stderrs) 
+        return;
 
-void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDef **pipes, int *pipeCount, concatDef **concats, int *concatCount, stderrDef **stderrs, int *stderrCount) {
+    // --- Free nodes ---
+    if (nodes) {
+        for (int i = 0; i < nodeCount; i++) {
+            free(nodes[i].name);
+            free(nodes[i].command);
+        }
+        free(nodes);
+    }
+    // --- Free pipes ---
+    if (pipes) {
+        for (int i = 0; i < pipeCount; i++) {
+            free(pipes[i].name);
+            free(pipes[i].from);
+            free(pipes[i].to);
+        }
+        free(pipes);
+    }
+    // --- Free concats ---
+    if (concats) {
+        for (int i = 0; i < concatCount; i++) {
+            free(concats[i].name);
+
+            if (concats[i].parts) {
+                int count = concats[i].partCount;
+                for (int j = 0; j < count; j++) {
+                    free(concats[i].parts[j]);
+                }
+                free(concats[i].parts);
+            }
+        }
+        free(concats);
+    }
+    // --- Free stderr mappings ---
+    if (stderrs) {
+        for (int i = 0; i < stderrCount; i++) {
+            free(stderrs[i].name);
+            free(stderrs[i].from);
+        }
+        free(stderrs);
+    }
+    // --- Free files ---
+    if (files) {
+        for (int i = 0; i < fileCount; i++) {
+            free(files[i].name);
+            free(files[i].fileName);
+        }
+        free(files);
+    }
+}
+
+void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDef **pipes, int *pipeCount, concatDef **concats, int *concatCount, stderrDef **stderrs, int *stderrCount, fileDef **files, int *fileCount) {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
         perror("Error opening flow file");
@@ -46,8 +97,9 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
     pipeDef *currentPipe = NULL;
     concatDef *currentConcat = NULL;
     stderrDef *currentStderr = NULL;
+    fileDef *currentFile = NULL;
 
-    int nodeCap = 0, pipeCap = 0, concatCap = 0, stderrCap = 0;
+    int nodeCap = 0, pipeCap = 0, concatCap = 0, stderrCap = 0, fileCap = 0;
     
     while (fgets(lineBuffer, sizeof(lineBuffer), fp)) {
         lineBuffer[strcspn(lineBuffer, "\n")] = '\0';
@@ -62,7 +114,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!*nodes) {
                     perror("malloc failed for nodes");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
             } 
@@ -72,7 +124,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!tmp) {
                     perror("realloc failed for nodes");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
                 *nodes = tmp;
@@ -97,7 +149,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!*pipes) {
                     perror("malloc failed for pipes");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
             } 
@@ -107,7 +159,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!tmp) {
                     perror("realloc failed for pipes");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
                 *pipes = tmp;
@@ -138,7 +190,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!*concats) {
                     perror("malloc failed for concats");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
             } 
@@ -148,7 +200,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!tmp) {
                     perror("realloc failed for concats");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
                 *concats = tmp;
@@ -188,7 +240,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!*stderrs) {
                     perror("malloc failed for stderrs");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
             } 
@@ -198,7 +250,7 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
                 if (!tmp) {
                     perror("realloc failed for stderrs");
                     fclose(fp);
-                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
                     exit(1);
                 }
                 *stderrs = tmp;
@@ -214,56 +266,43 @@ void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDe
             currentStderr->from = strdup(lineBuffer + 5);
             continue;
         }
+
+        // --- FILE SECTION ---
+        if (strncmp(lineBuffer, "file=", 5) == 0) {
+            if (*files == NULL) {
+                fileCap = 1;
+                *files = malloc(fileCap * sizeof(fileDef));
+                if (!*files) {
+                    perror("malloc failed for files");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
+                    exit(1);
+                }
+            } 
+            else if (*fileCount >= fileCap) {
+                fileCap *= 2;
+                fileDef *tmp = realloc(*files, fileCap * sizeof(fileDef));
+                if (!tmp) {
+                    perror("realloc failed for files");
+                    fclose(fp);
+                    freeMem(*nodes, *nodeCount, *pipes, *pipeCount, *concats, *concatCount, *stderrs, *stderrCount, *files, *fileCount);
+                    exit(1);
+                }
+                *files = tmp;
+            }
+
+            currentFile = &(*files)[(*fileCount)++];
+            currentFile->name = strdup(lineBuffer + 5);
+            currentFile->fileName = NULL;
+            continue;
+        }
+        if (strncmp(lineBuffer, "name=", 5) == 0 && currentFile) {
+            currentFile->fileName = strdup(lineBuffer + 5);
+            continue;
+        }
     }
 
     fclose(fp);
-}
-
-void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount) {
-    // --- Free nodes ---
-    for (int i = 0; i < nodeCount; i++) {
-        free(nodes[i].name);
-        free(nodes[i].command);
-    }
-    free(nodes);
-
-    // --- Free pipes ---
-    for (int i = 0; i < pipeCount; i++) {
-        free(pipes[i].name);
-        free(pipes[i].from);
-        free(pipes[i].to);
-    }
-    free(pipes);
-
-    // --- Free concats ---
-    for (int i = 0; i < concatCount; i++) {
-        free(concats[i].name);
-
-        if (concats[i].parts) {
-            int count = concats[i].partCount;
-            for (int j = 0; j < count; j++) {
-                free(concats[i].parts[j]);
-            }
-            free(concats[i].parts);
-        }
-    }
-    free(concats);
-
-    // --- Free stderr mappings ---
-    for (int i = 0; i < stderrCount; i++) {
-        free(stderrs[i].name);
-        free(stderrs[i].from);
-    }
-    free(stderrs);
-
-    // --- Free files ---
-    /*
-    for (int i = 0; i < fileCount; i++) {
-        free(files[i].name);
-        free(files[i].fileName);
-    }
-    free(files);
-    */
 }
 
 char **splitCommand(const char *command) {
@@ -287,7 +326,7 @@ char **splitCommand(const char *command) {
     while (token != NULL) {
         if (position >= 63) break; // avoid overflow, keep room for NULL
         // Remove surrounding quotes if any
-        size_t tlen = strlen(token);
+        int tlen = strlen(token);
         if (tlen >= 2 && ((token[0] == '\'' && token[tlen - 1] == '\'') || (token[0] == '"'  && token[tlen - 1] == '"'))) {
             token[tlen - 1] = '\0';
             token++;
@@ -309,7 +348,7 @@ void freeArgs(char **args) {
     free(args);
 }
 
-void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount) { 
+void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount, fileDef *files, int fileCount) { 
     // --- BASE CASE: Check if it's a NODE ---
     for (int i = 0; i < nodeCount; i++) {
         if (strcmp(nodes[i].name, blockName) == 0) {
@@ -327,6 +366,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
             }
             else {
                 perror("fork failed");
+                freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
                 exit(1);
             }
         }
@@ -339,12 +379,14 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
             int fd[2];
             if (pipe(fd) == -1) {
                 perror("pipe failed");
+                freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
                 exit(1);
             }
 
             pid_t pid = fork();
             if (pid == -1) {
                 perror("fork failed");
+                freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
                 exit(1);
             }
 
@@ -355,7 +397,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
                 close(fd[1]);
                 
                 // Recursively execute whatever "from" points to
-                executeFlow(pipes[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+                executeFlow(pipes[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
                 exit(0);
             } 
             else {
@@ -365,7 +407,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
                 close(fd[0]);
 
                 // Recursively execute whatever "to" points to
-                executeFlow(pipes[i].to, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+                executeFlow(pipes[i].to, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
                 wait(NULL);
                 return;
             }
@@ -377,7 +419,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
         if (strcmp(concats[i].name, blockName) == 0) {
             for (int j = 0; j < concats[i].partCount; j++) {
                 // Execute each part sequentially
-                executeFlow(concats[i].parts[j], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+                executeFlow(concats[i].parts[j], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
             }
             // Return to prevent falling through to other block types
             return;
@@ -391,6 +433,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
         pid_t pid = fork();
         if (pid == -1) {
             perror("fork failed for stderr block");
+            freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
             exit(1);
         }
 
@@ -399,7 +442,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
             dup2(STDOUT_FILENO, STDERR_FILENO);
 
             // Execute the node whose stderr we’re merging
-            executeFlow(stderrs[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
+            executeFlow(stderrs[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
             exit(0);
         } 
         else {
@@ -410,11 +453,82 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
         }
     }
 
+    // --- FILE CASE ---
+    for (int i = 0; i < fileCount; i++) {
+        if (strcmp(files[i].name, blockName) == 0) {
+
+            if (!files[i].fileName) {
+            fprintf(stderr, "Error: file '%s' missing name attribute\n", files[i].name);
+            freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+            exit(1);
+            }
+
+            int isInput = 0;
+            int isOutput = 0;
+
+            for (int j = 0; j < pipeCount; j++) {
+                if (pipes[j].from && strcmp(pipes[j].from, blockName) == 0) {
+                    isInput = 1;
+                    break;
+                }
+                if (pipes[j].to && strcmp(pipes[j].to, blockName) == 0) {
+                    isOutput = 1;
+                    break;
+                }
+            }
+
+            if (isInput) {
+                // --- Input file case ---
+                FILE *input = fopen(files[i].fileName, "r");
+                if (!input) {
+                    perror("Error opening input file");
+                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+                    exit(1);
+                }
+
+                char buffer[1024];
+                int n;
+                while ((n = fread(buffer, 1, sizeof(buffer), input)) > 0) {
+                    if (fwrite(buffer, 1, n, stdout) != n) {
+                        perror("write to pipe failed");
+                        fclose(input);
+                        freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+                        exit(1);
+                    }
+                }
+
+                fclose(input);
+                return;
+            }
+            else if (isOutput) {
+                // --- Output file case ---
+                FILE *output = fopen(files[i].fileName, "w");
+                if (!output) {
+                    perror("Error opening output file");
+                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
+                    exit(1);
+                }
+
+                char buffer[1024];
+                int n;
+                while ((n = fread(buffer, 1, sizeof(buffer), stdin)) > 0) {
+                    if (fwrite(buffer, 1, n, output) != n) {
+                        perror("Error writing to output file");
+                        fclose(output);
+                        freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
+                        exit(1);
+                    }
+                }
+                fclose(output);
+                return;
+            }
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <flowfile>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage: ./flow <flowfile> <directive>\n");
         return 1;
     }
     
@@ -423,57 +537,57 @@ int main(int argc, char *argv[]) {
     pipeDef *pipes = NULL;
     concatDef *concats = NULL;
     stderrDef *stderrs = NULL;
-    //fileDef *files = NULL;
-
-    int nodeCount = 0, pipeCount = 0, concatCount = 0, stderrCount = 0; //, fileCount = 0;
+    fileDef *files = NULL;
+    int nodeCount = 0, pipeCount = 0, concatCount = 0, stderrCount = 0, fileCount = 0;
     
-    parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount, &concats, &concatCount, &stderrs, &stderrCount);
-    
-    // --- Print out parsed data ---
-    // printf("\n=== Parsed Nodes ===\n");
-    // for (int i = 0; i < nodeCount; i++) {
-    //     printf("Node %d:\n", i + 1);
-    //     printf("  Name: %s\n", nodes[i].name);
-    //     printf("  Command: %s\n", nodes[i].command ? nodes[i].command : "(none)");
-    // }
+    parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount, &concats, &concatCount, &stderrs, &stderrCount, &files, &fileCount);
 
-    // printf("\n=== Parsed Pipes ===\n");
-    // for (int i = 0; i < pipeCount; i++) {
-    //     printf("Pipe %d:\n", i + 1);
-    //     printf("  Name: %s\n", pipes[i].name);
-    //     printf("  From: %s\n", pipes[i].from ? pipes[i].from : "(none)");
-    //     printf("  To: %s\n", pipes[i].to ? pipes[i].to : "(none)");
-    // }
+    executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
 
-    // printf("\n=== Parsed Concatenations ===\n");
-    // for (int i = 0; i < concatCount; i++) {
-    //     printf("Concat %d:\n", i + 1);
-    //     printf("  Name: %s\n", concats[i].name);
-    //     printf("  Parts (%d):\n", concats[i].partCount);
-    //     for (int j = 0; j < concats[i].partCount; j++) {
-    //         printf("    Part %d: %s\n", j, concats[i].parts[j]);
-    //     }
-    // }
+    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
 
-    // printf("\n=== Parsed Stderr Redirections ===\n");
-    // for (int i = 0; i < stderrCount; i++) {
-    //     printf("Stderr %d:\n", i + 1);
-    //     printf("  Name: %s\n", stderrs[i].name);
-    //     printf("  From: %s\n", stderrs[i].from ? stderrs[i].from : "(none)");
-    // }
-    
-    // printf("\n=== Parsed Files ===\n");
-    // for (int i = 0; i < fileCount; i++) {
-    //     printf("File %d:\n", i + 1);
-    //     printf("  Name: %s\n", files[i].name);
-    //     printf("  FileName: %s\n", files[i].fileName ? files[i].fileName : "(none)");
-    // }
-    
-
-
-    executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount);
-
-    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount); //, files, fileCount);
 
     return 0;
 }
+
+/*
+ //--- Print out parsed data ---
+    printf("\n=== Parsed Nodes ===\n");
+    for (int i = 0; i < nodeCount; i++) {
+        printf("Node %d:\n", i + 1);
+        printf("  Name: %s\n", nodes[i].name);
+        printf("  Command: %s\n", nodes[i].command ? nodes[i].command : "(none)");
+    }
+
+    printf("\n=== Parsed Pipes ===\n");
+    for (int i = 0; i < pipeCount; i++) {
+        printf("Pipe %d:\n", i + 1);
+        printf("  Name: %s\n", pipes[i].name);
+        printf("  From: %s\n", pipes[i].from ? pipes[i].from : "(none)");
+        printf("  To: %s\n", pipes[i].to ? pipes[i].to : "(none)");
+    }
+
+    printf("\n=== Parsed Concatenations ===\n");
+    for (int i = 0; i < concatCount; i++) {
+        printf("Concat %d:\n", i + 1);
+        printf("  Name: %s\n", concats[i].name);
+        printf("  Parts (%d):\n", concats[i].partCount);
+        for (int j = 0; j < concats[i].partCount; j++) {
+            printf("    Part %d: %s\n", j, concats[i].parts[j]);
+        }
+    }
+
+    printf("\n=== Parsed Stderr Redirections ===\n");
+    for (int i = 0; i < stderrCount; i++) {
+        printf("Stderr %d:\n", i + 1);
+        printf("  Name: %s\n", stderrs[i].name);
+        printf("  From: %s\n", stderrs[i].from ? stderrs[i].from : "(none)");
+    }
+    
+    printf("\n=== Parsed Files ===\n");
+    for (int i = 0; i < fileCount; i++) {
+        printf("File %d:\n", i + 1);
+        printf("  Name: %s\n", files[i].name);
+        printf("  FileName: %s\n", files[i].fileName ? files[i].fileName : "(none)");
+    }
+    */
