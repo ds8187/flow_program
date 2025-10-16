@@ -53,6 +53,11 @@ int main(int argc, char *argv[]) {
     
     parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount, &concats, &concatCount, &stderrs, &stderrCount, &files, &fileCount);
 
+    // if no nodes, execute flow will enter infinite recursion
+    if (nodeCount == 0) {
+        return 0;
+    }
+
     executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
 
     freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
