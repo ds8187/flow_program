@@ -30,7 +30,37 @@ typedef struct {
     char *name;
     char *fileName;
 } fileDef;
- 
+
+void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount, fileDef* files, int fileCount);
+void parseFlowFile(const char *filename, nodeDef **nodes, int *nodeCount, pipeDef **pipes, int *pipeCount, concatDef **concats, int *concatCount, stderrDef **stderrs, int *stderrCount, fileDef **files, int *fileCount);
+char **splitCommand(const char *command);
+void freeArgs(char **args);
+void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount, fileDef *files, int fileCount);
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: ./flow <flowfile> <directive>\n");
+        return 1;
+    }
+    
+    // --- Allocate and initialize all structures ---
+    nodeDef *nodes = NULL;
+    pipeDef *pipes = NULL;
+    concatDef *concats = NULL;
+    stderrDef *stderrs = NULL;
+    fileDef *files = NULL;
+    int nodeCount = 0, pipeCount = 0, concatCount = 0, stderrCount = 0, fileCount = 0;
+    
+    parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount, &concats, &concatCount, &stderrs, &stderrCount, &files, &fileCount);
+
+    executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
+
+    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+
+
+    return 0;
+}
+
 void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount, stderrDef *stderrs, int stderrCount, fileDef* files, int fileCount) {
     if (!nodes && !pipes && !concats && !stderrs) 
         return;
@@ -524,30 +554,6 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
             }
         }
     }
-}
-
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: ./flow <flowfile> <directive>\n");
-        return 1;
-    }
-    
-    // --- Allocate and initialize all structures ---
-    nodeDef *nodes = NULL;
-    pipeDef *pipes = NULL;
-    concatDef *concats = NULL;
-    stderrDef *stderrs = NULL;
-    fileDef *files = NULL;
-    int nodeCount = 0, pipeCount = 0, concatCount = 0, stderrCount = 0, fileCount = 0;
-    
-    parseFlowFile(argv[1], &nodes, &nodeCount, &pipes, &pipeCount, &concats, &concatCount, &stderrs, &stderrCount, &files, &fileCount);
-
-    executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
-
-    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
-
-
-    return 0;
 }
 
 /*

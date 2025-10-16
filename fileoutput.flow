@@ -1,0 +1,13 @@
+node=read_file
+command=cat foo.txt
+
+file=output_file
+name=result.txt
+
+node=word_count
+command=wc
+
+pipe=read_pipe
+from=read_file
+to=output_file
+
