@@ -1,0 +1,12 @@
+pipe=foo_to_fuu
+from=cat_foo
+to=shenanigan
+
+concatenate=foo_then_fuu
+parts=2
+part_0=shenanigan
+part_1=foo_to_fuu
+
+pipe=shenanigan
+from=foo_then_fuu
+to=word_count

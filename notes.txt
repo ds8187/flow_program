@@ -52,3 +52,46 @@ mkdir: 2: File exists
        0       0       0
 tomasecheverri@MacBookPro Assignment 2 % mkdir a 2>&1 | wc  
        1       4      22
+
+
+/*
+ //--- Print out parsed data ---
+    printf("\n=== Parsed Nodes ===\n");
+    for (int i = 0; i < nodeCount; i++) {
+        printf("Node %d:\n", i + 1);
+        printf("  Name: %s\n", nodes[i].name);
+        printf("  Command: %s\n", nodes[i].command ? nodes[i].command : "(none)");
+    }
+
+    printf("\n=== Parsed Pipes ===\n");
+    for (int i = 0; i < pipeCount; i++) {
+        printf("Pipe %d:\n", i + 1);
+        printf("  Name: %s\n", pipes[i].name);
+        printf("  From: %s\n", pipes[i].from ? pipes[i].from : "(none)");
+        printf("  To: %s\n", pipes[i].to ? pipes[i].to : "(none)");
+    }
+
+    printf("\n=== Parsed Concatenations ===\n");
+    for (int i = 0; i < concatCount; i++) {
+        printf("Concat %d:\n", i + 1);
+        printf("  Name: %s\n", concats[i].name);
+        printf("  Parts (%d):\n", concats[i].partCount);
+        for (int j = 0; j < concats[i].partCount; j++) {
+            printf("    Part %d: %s\n", j, concats[i].parts[j]);
+        }
+    }
+
+    printf("\n=== Parsed Stderr Redirections ===\n");
+    for (int i = 0; i < stderrCount; i++) {
+        printf("Stderr %d:\n", i + 1);
+        printf("  Name: %s\n", stderrs[i].name);
+        printf("  From: %s\n", stderrs[i].from ? stderrs[i].from : "(none)");
+    }
+    
+    printf("\n=== Parsed Files ===\n");
+    for (int i = 0; i < fileCount; i++) {
+        printf("File %d:\n", i + 1);
+        printf("  Name: %s\n", files[i].name);
+        printf("  FileName: %s\n", files[i].fileName ? files[i].fileName : "(none)");
+    }
+    */
