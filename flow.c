@@ -512,7 +512,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
                 
                 // Recursively execute whatever "from" points to
                 executeFlow(pipes[i].from, nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
-                exit(0);
+                _exit(0);
             } 
             else if (pid > 0) {
                 // --- PARENT PROCESS: executes the 'to' side ---
@@ -672,14 +672,20 @@ int hasCycleUtil(const char *block, nodeDef *nodes, int nodeCount, pipeDef *pipe
     }
 
     if (!hasOutgoing) {
-        int isNode = 0;
+        int isNodeorFile = 0;
         for (int i = 0; i < nodeCount; i++) {
             if (strcmp(nodes[i].name, block) == 0) {
-                isNode = 1;
+                isNodeorFile = 1;
                 break;
             }
         }
-        if (!isNode) {
+        for (int i = 0; i < fileCount; i++) {
+            if (strcmp(files[i].name, block) == 0) {
+                isNodeorFile = 1;
+                break;
+            }
+        }
+        if (!isNodeorFile) {
             return 1;
         }
     }
@@ -707,8 +713,10 @@ int detectCycles(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, c
 
     // Clean up
     for (int i = 0; i < 256; i++) {
-        if (visited[i]) free(visited[i]);
-        if (recStack[i]) free(recStack[i]);
+        if (visited[i]) 
+            free(visited[i]);
+        if (recStack[i]) 
+            free(recStack[i]);
     }
 
     return 0;
