@@ -283,8 +283,12 @@ void parseFile(const char *filename, ListContainer* listContainer)
 }
 TreeNode* createExecutionTree(ListContainer* listContainer, TreeNodeList* seenNodesList, char* name)
 {
+    // Check if this node is already in the recursion stack (true cycle)
     TreeNode* existing = findTreeNode(seenNodesList, name);
-    if (existing) return existing;
+    if (existing && existing->inStack) {
+        fprintf(stderr, "Cycle detected at node: %s\n", name);
+        return NULL;
+    }
 
     char* typeStr = getNodeType(listContainer, name);
     if (!typeStr) {
@@ -296,189 +300,160 @@ TreeNode* createExecutionTree(ListContainer* listContainer, TreeNodeList* seenNo
     node->left = NULL;
     node->right = NULL;
     node->visited = 0;
-    node->inStack = 0;
+    node->inStack = 1; // mark in recursion stack
+
     addTreeNode(seenNodesList, name, node);  // store before recursion
-    
+
     if (strcmp(typeStr, "Node") == 0) {
         node->type = NODE_TYPE;
         node->data.node = findNodeByName(listContainer->nodeList, name);
-        return node;
-    }
-
-    if (strcmp(typeStr, "Pipe") == 0) {
+    } else if (strcmp(typeStr, "Pipe") == 0) {
         node->type = PIPE_TYPE;
         node->data.pipe = findPipeByName(listContainer->pipeList, name);
         if (!node->data.pipe) return NULL;
 
-        // recursively connect from/to
         if (node->data.pipe->from)
             node->left = createExecutionTree(listContainer, seenNodesList, node->data.pipe->from);
         if (node->data.pipe->to)
             node->right = createExecutionTree(listContainer, seenNodesList, node->data.pipe->to);
 
-        return node;
-    }
-
-    if (strcmp(typeStr, "Concat") == 0) {
+    } else if (strcmp(typeStr, "Concat") == 0) {
         node->type = CONCAT_TYPE;
         node->data.concat = findConcatByName(listContainer->concatList, name);
         if (!node->data.concat) return NULL;
-        node->left = NULL;       
-        node->right = NULL;      
-        Concat* concat = node->data.concat;
-        if (concat->partCount > 0) {
-            // First part
-            node->left = createExecutionTree(listContainer, seenNodesList, concat->parts[0]);
+
+        if (node->data.concat->partCount > 0) {
+            node->left = createExecutionTree(listContainer, seenNodesList, node->data.concat->parts[0]);
             TreeNode* current = node->left;
 
-        // Remaining parts
-            for (int i = 1; i < concat->partCount; i++) {
-                TreeNode* next = createExecutionTree(listContainer, seenNodesList, concat->parts[i]);
+            for (int i = 1; i < node->data.concat->partCount; i++) {
+                TreeNode* next = createExecutionTree(listContainer, seenNodesList, node->data.concat->parts[i]);
                 current->right = next;
                 current = next;
-                }
             }
-        return node;
-    }
-    if (strcmp(typeStr, "Stderr") == 0){
+        }
+
+    } else if (strcmp(typeStr, "Stderr") == 0) {
         node->type = STDERR_TYPE;
         node->data.stderr = findStderrByName(listContainer->stderrList, name);
-        if(!node->data.stderr) return NULL;
-        node->left = NULL;
-        node->right = NULL;
+        if (!node->data.stderr) return NULL;
 
-        if(node->data.stderr->from){
-           node->left = createExecutionTree(listContainer, seenNodesList, node->data.stderr->from); 
-        }
-        return node;
+        if (node->data.stderr->from)
+            node->left = createExecutionTree(listContainer, seenNodesList, node->data.stderr->from);
     }
 
-    return NULL;
-
+    node->inStack = 0; // done with this node
+    node->visited = 1;
+    return node;
 }
-void executeTree(TreeNode* node, int inputFile, int outputFile)
-{
-   if (node->type == NODE_TYPE) {
-    int capacity = 10;
-    int argc = 0;
-    char **argv = (char **) malloc(sizeof(char*) * capacity);
-    if (!argv) {
-        perror("malloc failed");
-        exit(1);
+
+void executeTree(TreeNode* node, int inputFile, int outputFile) {
+    if (!node) {
+        return;
     }
 
-    char *p = node->data.node->command;
-    while (*p) {
-        // Skip leading spaces
-        while (*p && *p == ' ') p++;
-        if (!*p) break;
+    if (node->type == NODE_TYPE) {
+        int capacity = 10, argc = 0;
+        char **argv = (char**) malloc(sizeof(char*) * capacity);
+        char *p = node->data.node->command;
 
-        char *start;
-        char quote = 0;
+        while (*p) {
+            while (*p && *p == ' ') p++;
+            if (!*p) break;
 
-        // Handle quotes
-        if (*p == '\'' || *p == '"') {
-            quote = *p++;
-            start = p;
-            while (*p && *p != quote) p++;
-        } else {
-            start = p;
-            while (*p && *p != ' ') p++;
-        }
-
-        int len = p - start;
-        char *arg = (char *) malloc(len + 1);
-        if (!arg) {
-            perror("malloc failed for argument");
-            exit(1);
-        }
-        strncpy(arg, start, len);
-        arg[len] = '\0';
-
-        // Resize argv if needed
-        if (argc == capacity - 1) {
-            capacity *= 2;
-            char **tmp = (char **) realloc(argv, sizeof(char*) * capacity);
-            if (!tmp) {
-                perror("realloc failed for argv");
-                exit(1);
+            char *start;
+            char quote = 0;
+            if (*p == '\'' || *p == '"') {
+                quote = *p++;
+                start = p;
+                while (*p && *p != quote) p++;
+            } else {
+                start = p;
+                while (*p && *p != ' ') p++;
             }
-            argv = tmp;
+
+            int len = p - start;
+            char *arg = (char *) malloc(len + 1);
+            strncpy(arg, start, len);
+            arg[len] = '\0';
+
+            if (argc == capacity - 1) {
+                capacity *= 2;
+                argv = (char **) realloc(argv, sizeof(char*) * capacity);
+            }
+            argv[argc++] = arg;
+            if (*p) p++;
         }
+        argv[argc] = NULL;
 
-        argv[argc++] = arg;
 
-        if (*p) p++; // Skip closing quote or space
-    }
+        if (inputFile != STDIN_FILENO) { dup2(inputFile, STDIN_FILENO); close(inputFile); }
+        if (outputFile != STDOUT_FILENO) { dup2(outputFile, STDOUT_FILENO); close(outputFile); }
 
-    argv[argc] = NULL;
+        execvp(argv[0], argv);
+        perror("execvp failed");
+        for (int i = 0; i < argc; i++) free(argv[i]);
+        free(argv);
+        exit(1);
 
-    // Redirect input/output if needed
-    if (inputFile != STDIN_FILENO) {
-        dup2(inputFile, STDIN_FILENO);
-        close(inputFile);
-    }
-    if (outputFile != STDOUT_FILENO) {
-        dup2(outputFile, STDOUT_FILENO);
-        close(outputFile);
-    }
+    } else if (node->type == PIPE_TYPE) {
+        int fd[2]; pipe(fd);
 
-    execvp(argv[0], argv);
-    perror("execvp failed");
-
-    // Free memory only reached if execvp fails
-    for (int i = 0; i < argc; i++) free(argv[i]);
-    free(argv);
-    exit(1);
-    } else if (node->type == PIPE_TYPE){
-         
-        int fd[2];
-        pipe(fd);
         pid_t pid_left = fork();
+        if (pid_left == 0) {
+            close(fd[0]);
+            executeTree(node->left, inputFile, fd[1]);
+            close(fd[1]);
+            exit(0);
+        }
 
-        if (pid_left == 0){ //left child
-            dup2(fd[1], STDOUT_FILENO);
-            close(fd[0]);
-            close(fd[1]);
-            executeTree(node->left, STDIN_FILENO, STDOUT_FILENO);
-            exit(0);
-        }
         pid_t pid_right = fork();
-        if (pid_right == 0){ //right child
-            dup2(fd[0], STDIN_FILENO);
-            close(fd[0]);
+        if (pid_right == 0) {
             close(fd[1]);
-            executeTree(node->right, STDIN_FILENO, STDOUT_FILENO);
+            executeTree(node->right, fd[0], outputFile);
+            close(fd[0]);
             exit(0);
         }
-        close(fd[0]);
-        close(fd[1]);
+
+        close(fd[0]); close(fd[1]);
         waitpid(pid_left, NULL, 0);
         waitpid(pid_right, NULL, 0);
-        return;
-   } else if (node->type == CONCAT_TYPE){
-        TreeNode* current = node->left;  // start with first part
-        for (int i = 0; i < node->data.concat->partCount && current; i++) {
-            pid_t pid = fork();
-            if (pid == 0) {
-                executeTree(current, STDIN_FILENO, STDOUT_FILENO);
-                exit(0);  // child exits after execution
-            }
-            waitpid(pid, NULL, 0);  // parent waits for child to finish
-            current = current->right;
+
+    }else if (node->type == CONCAT_TYPE) {
+    TreeNode* current = node->left;
+    int partNum = 0;
+    int totalParts = node->data.concat->partCount;
+
+    while (current && partNum < totalParts) {
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork failed for CONCAT part");
+            exit(1);
+        } else if (pid == 0) {
+            // child executes the current part
+            executeTree(current, STDIN_FILENO, STDOUT_FILENO);
+            exit(0);
+        } else {
+            int status;
+            waitpid(pid, &status, 0);
         }
-    } else if (node->type == STDERR_TYPE){
-            TreeNode* current = node->left;  // start with first part
-            pid_t pid = fork();
-            if (pid == 0) {
-                dup2(STDOUT_FILENO, STDERR_FILENO);
-                executeTree(current, STDIN_FILENO, STDOUT_FILENO);
-                exit(0);  // child exits after execution
-            }
-            waitpid(pid, NULL, 0);  // parent waits for child to finish
-            current = current->right;
+
+        current = current->right;
+        partNum++;
+    }
+}else if (node->type == STDERR_TYPE) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            dup2(STDOUT_FILENO, STDERR_FILENO);
+            executeTree(node->left, inputFile, outputFile);
+            exit(0);
         }
+        waitpid(pid, NULL, 0);
+    }
 }
+
+
 void printExecutionTree(TreeNode* node, int depth) {
     if (!node) return;
 
