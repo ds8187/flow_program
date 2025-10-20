@@ -30,6 +30,11 @@ typedef struct {
     char *from;
 } Stderr;
 
+typedef struct {
+    char *name;  
+    char *path;  
+} FlowFile;
+
 typedef struct{
     Node** list;
     int size;
@@ -54,15 +59,22 @@ typedef struct{
     int capacity; 
 } StderrList;
 
+typedef struct {
+    FlowFile** list;
+    int size;
+    int capacity;
+} FileList;
+
 typedef struct{
     NodeList* nodeList;
     PipeList* pipeList;
     ConcatList* concatList;
     StderrList* stderrList;
+    FileList* fileList;
 } ListContainer;
 
 typedef enum {NODE_TYPE, PIPE_TYPE, CONCAT_TYPE, STDERR_TYPE} NodeType;
-typedef enum {BLOCK_NONE, BLOCK_NODE, BLOCK_PIPE, BLOCK_CONCAT, BLOCK_STDERR} BlockType;
+typedef enum {BLOCK_NONE, BLOCK_NODE, BLOCK_PIPE, BLOCK_CONCAT, BLOCK_STDERR, BLOCK_FILE} BlockType;
 
 typedef union {
     Node* node;
@@ -92,13 +104,6 @@ typedef struct {
     int capacity;
 } TreeNodeList;
 
-/*
-typedef struct {
-    char *name;
-    int *fileName;
-} fileDef;
- */
-
 // Core Functions
 void parseFile(const char *filename, ListContainer* listContainer);
 TreeNode* createExecutionTree(ListContainer* listContainer, TreeNodeList* seenNodeList, char* rootName);
@@ -108,6 +113,7 @@ void createNode(ListContainer* listContainer);
 void createPipe(ListContainer* listContainer);
 void createConcat(ListContainer* listContainer);
 void createStderr(ListContainer* listContainer);
+void createFile(ListContainer* listContainer);
 // Node Attribute Save Helper Functions
 void saveNodeName(ListContainer* listContainer, char* lineBuffer);
 void saveNodeCmd(ListContainer* listContainer, char* lineBuffer);
@@ -116,12 +122,14 @@ void saveConcatAttr(char** concatAttr, char* lineBuffer, int offset);
 void saveParts(ConcatList* concatList, char* startOfWord);
 void saveStderrName(ListContainer* listContainer, char* lineBuffer);
 void saveStderrFrom(ListContainer* listContainer, char* lineBuffer);
+void saveFileName(ListContainer* listContainer, char* lineBuffer);
 // Node Atrribute Get Helper Functions
 char* getNodeType(ListContainer* listContainer, char* name);
 Node* findNodeByName(NodeList* list, const char* name);
 Pipe* findPipeByName(PipeList* list, const char* name);
 Concat* findConcatByName(ConcatList* list, const char* name);
 Stderr* findStderrByName(StderrList* list, const char* name);
+FlowFile* findFileByName(FileList* list, const char* name);
 // void printExecutionTree(TreeNode* node, int depth); 
 // Detect Cycles & helpers methods to keep track of existing nodes to not keep allocating same node infinetly 
 int detectCycle(TreeNode* node);
@@ -131,14 +139,17 @@ void addTreeNode(TreeNodeList* list, const char* name, TreeNode* node);
 void freeMem(ListContainer* listOfLists, TreeNodeList* listOfNodes, TreeNode* node);
 void freeListsMems(ListContainer* listOfLists, TreeNodeList* listOfNodes);
 void freeTree(TreeNode* node);
-// void freeMem(nodeDef *nodes, int nodeCount, pipeDef *pipes, int pipeCount, concatDef *concats, int concatCount,stderrDef *stderrs, int stderrCoun //fileDef *files, int fileCount
-// ); 
+void trim(char *s) {
+    int len = strlen(s);
+    while(len > 0 && (s[len-1] == '\n' || s[len-1] == '\r' || s[len-1] == ' '))
+        s[--len] = '\0';
+}
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <flowfile>\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <flowfile> <root_node>\n", argv[0]);
         return 1;
     }
-    ListContainer listContainer = {NULL, NULL, NULL, NULL};
+    ListContainer listContainer = {NULL, NULL, NULL, NULL, NULL};
     Tree* executionTree = (Tree*) malloc(sizeof(Tree));
     executionTree->root = NULL;
     executionTree->size = 0;
@@ -150,6 +161,11 @@ int main(int argc, char *argv[]) {
     
     // --- Parse each section individually ---
     parseFile(argv[1], &listContainer); //Read input file line by line. Then group all NODE Types(Node, Pipe, Concat, etc) individually. Finally store them inside listContainer
+    if (!listContainer.nodeList || listContainer.nodeList->size == 0) {
+        fprintf(stderr, "Error: no nodes defined in the input flow file.\n");
+        freeMem(&listContainer, list, NULL);
+        exit(1);
+    }
     if (argv[2] != NULL){
 
         executionTree->root = createExecutionTree(&listContainer, list, argv[2]);
@@ -229,7 +245,13 @@ void parseFile(const char *filename, ListContainer* listContainer)
             saveStderrName(listContainer, lineBuffer);
             currentBlock = BLOCK_STDERR;
             continue;
+        }else if (strncmp(lineBuffer, "file=", 5) == 0) {
+            createFile(listContainer);
+            saveFileName(listContainer, lineBuffer);
+            currentBlock = BLOCK_FILE;
+            continue;
         }
+ 
 
         // --- BLOCK CONTENTS ---
         switch (currentBlock) {
@@ -341,6 +363,29 @@ TreeNode* createExecutionTree(ListContainer* listContainer, TreeNodeList* seenNo
         if (node->data.stderr->from)
             node->left = createExecutionTree(listContainer, seenNodesList, node->data.stderr->from);
     }
+ else if (strcmp(typeStr, "File") == 0) {
+    node->type = NODE_TYPE;
+    FlowFile* file = findFileByName(listContainer->fileList, name);
+    if (!file) return NULL;
+
+    node->data.node = (Node*) malloc(sizeof(Node));
+    if (!node->data.node) { perror("malloc Node"); exit(1); }
+
+    node->data.node->name = strdup(name);
+    if (!node->data.node->name) { perror("strdup"); exit(1); }
+
+    // Trim leading/trailing whitespace from path
+    char* path = file->path;
+    while (*path == ' ' || *path == '\t') path++; // skip leading spaces
+    int len = strlen(path);
+    while (len > 0 && (path[len-1] == ' ' || path[len-1] == '\t' || path[len-1] == '\n' || path[len-1] == '\r'))
+        path[--len] = '\0';
+
+    // Build command "cat <file>"
+    node->data.node->command = (char*) malloc(strlen("cat ") + strlen(path) + 1);
+    if (!node->data.node->command) { perror("malloc command"); exit(1); }
+    sprintf(node->data.node->command, "cat %s", path);
+}
 
     node->inStack = 0; // done with this node
     node->visited = 1;
@@ -353,72 +398,94 @@ void executeTree(TreeNode* node, int inputFile, int outputFile) {
     }
 
     if (node->type == NODE_TYPE) {
-        int capacity = 10, argc = 0;
-        char **argv = (char**) malloc(sizeof(char*) * capacity);
-        char *p = node->data.node->command;
+    int capacity = 10, argc = 0;
+    char **argv = (char**) malloc(sizeof(char*) * capacity);
+    char *p = node->data.node->command;
 
-        while (*p) {
-            while (*p && *p == ' ') p++;
-            if (!*p) break;
+    while (*p) {
+        while (*p && *p == ' ') p++;
+        if (!*p) break;
 
-            char *start;
-            char quote = 0;
-            if (*p == '\'' || *p == '"') {
-                quote = *p++;
-                start = p;
-                while (*p && *p != quote) p++;
-            } else {
-                start = p;
-                while (*p && *p != ' ') p++;
-            }
-
-            int len = p - start;
-            char *arg = (char *) malloc(len + 1);
-            strncpy(arg, start, len);
-            arg[len] = '\0';
-
-            if (argc == capacity - 1) {
-                capacity *= 2;
-                argv = (char **) realloc(argv, sizeof(char*) * capacity);
-            }
-            argv[argc++] = arg;
-            if (*p) p++;
+        char *start;
+        char quote = 0;
+        if (*p == '\'' || *p == '"') {
+            quote = *p++;
+            start = p;
+            while (*p && *p != quote) p++;
+        } else {
+            start = p;
+            while (*p && *p != ' ') p++;
         }
-        argv[argc] = NULL;
 
+        int len = p - start;
+        char *arg = (char *) malloc(len + 1);
+        strncpy(arg, start, len);
+        arg[len] = '\0';
 
-        if (inputFile != STDIN_FILENO) { dup2(inputFile, STDIN_FILENO); close(inputFile); }
-        if (outputFile != STDOUT_FILENO) { dup2(outputFile, STDOUT_FILENO); close(outputFile); }
+        if (argc == capacity - 1) {
+            capacity *= 2;
+            argv = (char **) realloc(argv, sizeof(char*) * capacity);
+        }
+        argv[argc++] = arg;
+        if (*p) p++;
+    }
+    argv[argc] = NULL;
 
-        execvp(argv[0], argv);
-        perror("execvp failed");
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
         for (int i = 0; i < argc; i++) free(argv[i]);
         free(argv);
         exit(1);
-
+    } else if (pid == 0) {
+        // Child
+        if (inputFile != STDIN_FILENO) { 
+            dup2(inputFile, STDIN_FILENO); close(inputFile); 
+        }
+        if (outputFile != STDOUT_FILENO) {
+             dup2(outputFile, STDOUT_FILENO); close(outputFile); 
+        }
+        execvp(argv[0], argv);
+        perror("execvp failed"); // if execvp fails
+        for (int i = 0; i < argc; i++) free(argv[i]);
+        free(argv);
+        exit(1);
+    }
+        // Parent
+        int status;
+        waitpid(pid, &status, 0); // Check child's exit status
+        for (int i = 0; i < argc; i++) free(argv[i]);
+        free(argv);
+        return;
     } else if (node->type == PIPE_TYPE) {
-        int fd[2]; pipe(fd);
+    int fd[2];
+    if (pipe(fd) < 0) {
+        perror("pipe failed");
+        exit(1);
+    }
+    pid_t pid_left = fork();
+    if (pid_left == 0) {
+        // Left child only writes to fd[1]
+        if (fd[0] != -1) close(fd[0]);
+        executeTree(node->left, inputFile, fd[1]);
+        close(fd[1]);
+        exit(0);
+    }
 
-        pid_t pid_left = fork();
-        if (pid_left == 0) {
-            close(fd[0]);
-            executeTree(node->left, inputFile, fd[1]);
-            close(fd[1]);
-            exit(0);
-        }
+    pid_t pid_right = fork();
+    if (pid_right == 0) {
+        // Right child only reads from fd[0]
+        if (fd[1] != -1) close(fd[1]);
+        executeTree(node->right, fd[0], outputFile);
+        close(fd[0]);
+        exit(0);
+    }
 
-        pid_t pid_right = fork();
-        if (pid_right == 0) {
-            close(fd[1]);
-            executeTree(node->right, fd[0], outputFile);
-            close(fd[0]);
-            exit(0);
-        }
-
-        close(fd[0]); close(fd[1]);
-        waitpid(pid_left, NULL, 0);
-        waitpid(pid_right, NULL, 0);
-
+    // Parent closes both ends
+    close(fd[0]);
+    close(fd[1]);
+    waitpid(pid_left, NULL, 0);
+    waitpid(pid_right, NULL, 0);
     }else if (node->type == CONCAT_TYPE) {
     TreeNode* current = node->left;
     int partNum = 0;
@@ -442,7 +509,7 @@ void executeTree(TreeNode* node, int inputFile, int outputFile) {
         current = current->right;
         partNum++;
     }
-}else if (node->type == STDERR_TYPE) {
+    }else if (node->type == STDERR_TYPE) {
         pid_t pid = fork();
         if (pid == 0) {
             dup2(STDOUT_FILENO, STDERR_FILENO);
@@ -577,6 +644,26 @@ void createStderr(ListContainer* listContainer)
     }
     stderrList->list[stderrList->size++] = (Stderr*) malloc(sizeof(Stderr));
 }
+void createFile(ListContainer* listContainer)
+{
+    if (!listContainer->fileList) {
+        listContainer->fileList = (FileList *) malloc(sizeof(FileList));
+        listContainer->fileList->size = 0;
+        listContainer->fileList->capacity = 10;
+        listContainer->fileList->list = (FlowFile**) malloc(sizeof(FlowFile*) * 10);
+    }
+
+    FileList* fileList = listContainer->fileList;
+    if (fileList->size == fileList->capacity) {
+        fileList->capacity *= 2;
+        FlowFile** tmp = (FlowFile**) realloc(fileList->list, sizeof(FlowFile*) * fileList->capacity);
+        if (!tmp) { perror("Failed to realloc FileList"); exit(1); }
+        fileList->list = tmp;
+    }
+
+    fileList->list[fileList->size] = (FlowFile*) malloc(sizeof(FlowFile));
+    fileList->size += 1;
+}
 // Getter functions to extract attributes from each NODE TYPE
 Node* findNodeByName(NodeList* list, const char* name) {
     if (!list) return NULL; 
@@ -607,6 +694,13 @@ Stderr* findStderrByName(StderrList* list, const char* name) {
             return list->list[i];
     return NULL;
 }
+FlowFile* findFileByName(FileList* list, const char* name) {
+    if (!list) return NULL;
+    for (int i = 0; i < list->size; i++)
+        if (strcmp(list->list[i]->name, name) == 0)
+            return list->list[i];
+    return NULL;
+}
 char* getNodeType(ListContainer* listContainer, char* name)
 {
     if (listContainer->nodeList) {
@@ -628,6 +722,11 @@ char* getNodeType(ListContainer* listContainer, char* name)
         for (int i = 0; i < listContainer->stderrList->size; i++)
             if (strcmp(name, listContainer->stderrList->list[i]->name) == 0)
                 return "Stderr"; 
+    }
+    if (listContainer->fileList) {
+        for (int i = 0; i < listContainer->fileList->size; i++)
+            if (strcmp(name, listContainer->fileList->list[i]->name) == 0)
+                return "File";
     }
     return NULL;
 }
@@ -663,8 +762,8 @@ void saveParts(ConcatList* concatList, char* startOfWord)
         perror("parts was not allocated\n");
         exit(1);
     }
-    if (concatNode->partCount < concatList->list[idx - 1]->partSize){
-        perror("there are more parts than parts count\n");
+    if (concatNode->partSize >= concatNode->partCount) {
+        perror("Cannot add more parts than partCount\n");
         exit(1);
     }
     if (concatNode->partSize == concatNode->partCapacity){ //Need to allocate more space for new Node
@@ -695,6 +794,21 @@ void saveStderrFrom(ListContainer* listContainer, char* lineBuffer)
     newNode->from = (char*) malloc(strlen(lineBuffer + 5) + 1);
     strcpy(newNode->from, lineBuffer + 5);
 }
+void saveFileName(ListContainer* listContainer, char* lineBuffer) {
+    int idx = listContainer->fileList->size;
+    FlowFile* newFile = listContainer->fileList->list[idx - 1];
+
+    // skip "file=" and trim
+    char* raw = lineBuffer + 5;
+    while (*raw == ' ' || *raw == '\t') raw++;
+    trim(raw);
+
+    newFile->path = strdup(raw);
+    newFile->name = strdup(raw);
+    if (!newFile->path || !newFile->name) { perror("strdup"); exit(1); }
+}
+
+
 //Cycle Detection
 int detectCycle(TreeNode* node) {
     if (!node) return 0;
@@ -734,54 +848,147 @@ void addTreeNode(TreeNodeList* list, const char* name, TreeNode* node) {
     list->size++;
 }
 //Free all Memory :)
-void freeMem(ListContainer* listOfLists, TreeNodeList* listOfNodes, TreeNode* node)
-{
-    freeListsMems(listOfLists, listOfNodes);
-
-}
-void freeListsMems(ListContainer* listOfLists, TreeNodeList* listOfNodes)
-{
-    for (int i = 0; i < listOfLists->nodeList->size; i++){
-        Node** nodeList = listOfLists->nodeList->list;
-        free(nodeList[i]->name);
-        free(nodeList[i]->command);
-    }
-    free(listOfLists->nodeList);
-    for (int i = 0; i < listOfLists->pipeList->size; i++){
-        Pipe** pipeList = listOfLists->pipeList->list;
-        free(pipeList[i]->name);
-        free(pipeList[i]->from);
-        free(pipeList[i]->to);
-    }
-    free(listOfLists->pipeList);
-    for (int i = 0; i < listOfLists->concatList->size; i++){
-        Concat** concatList = listOfLists->concatList->list;
-        free(concatList[i]->name);
-        for(int j = 0; j < concatList[i]->partSize; j++){
-            free(concatList[i]->parts[j]);
-        }
-    }
-    free(listOfLists->concatList);
-    for (int i = 0; i < listOfLists->stderrList->size; i++){
-        Stderr** stderrList = listOfLists->stderrList->list;
-        free(stderrList[i]->name);
-        free(stderrList[i]->from);
-    }
-    free(listOfLists->stderrList);
-    free(listOfLists);
-
-    for (int i = 0; i < listOfNodes->size; i++){
-        free(listOfNodes->names[i]);
-        free(listOfNodes->nodes[i]);
-    }
-    free(listOfNodes);
-}
-void freeTree(TreeNode* node)
-{
+// Free Tree recursively, including all types
+void freeTree(TreeNode* node) {
     if (!node) return;
 
     freeTree(node->left);
     freeTree(node->right);
 
+    switch (node->type) {
+        case NODE_TYPE:
+            if (node->data.node) {
+                free(node->data.node->name);
+                free(node->data.node->command);
+                free(node->data.node);
+            }
+            break;
+        case PIPE_TYPE:
+            if (node->data.pipe) {
+                free(node->data.pipe->name);
+                free(node->data.pipe->from);
+                free(node->data.pipe->to);
+                free(node->data.pipe);
+            }
+            break;
+        case CONCAT_TYPE:
+            if (node->data.concat) {
+                free(node->data.concat->name);
+                if (node->data.concat->parts) {
+                    for (int i = 0; i < node->data.concat->partSize; i++)
+                        free(node->data.concat->parts[i]);
+                    free(node->data.concat->parts);
+                }
+                free(node->data.concat);
+            }
+            break;
+        case STDERR_TYPE:
+            if (node->data.stderr) {
+                free(node->data.stderr->name);
+                free(node->data.stderr->from);
+                free(node->data.stderr);
+            }
+            break;
+    }
+
     free(node);
+}
+
+// Free all lists and their elements
+void freeListsMems(ListContainer* lists, TreeNodeList* nodeList) {
+    if (!lists) return;
+
+    // Free NodeList
+    if (lists->nodeList) {
+        for (int i = 0; i < lists->nodeList->size; i++) {
+            Node* n = lists->nodeList->list[i];
+            if (n) {
+                free(n->name);
+                free(n->command);
+                free(n);
+            }
+        }
+        free(lists->nodeList->list);
+        free(lists->nodeList);
+    }
+
+    // Free PipeList
+    if (lists->pipeList) {
+        for (int i = 0; i < lists->pipeList->size; i++) {
+            Pipe* p = lists->pipeList->list[i];
+            if (p) {
+                free(p->name);
+                free(p->from);
+                free(p->to);
+                free(p);
+            }
+        }
+        free(lists->pipeList->list);
+        free(lists->pipeList);
+    }
+
+    // Free ConcatList
+    if (lists->concatList) {
+        for (int i = 0; i < lists->concatList->size; i++) {
+            Concat* c = lists->concatList->list[i];
+            if (c) {
+                free(c->name);
+                if (c->parts) {
+                    for (int j = 0; j < c->partSize; j++)
+                        free(c->parts[j]);
+                    free(c->parts);
+                }
+                free(c);
+            }
+        }
+        free(lists->concatList->list);
+        free(lists->concatList);
+    }
+
+    // Free StderrList
+    if (lists->stderrList) {
+        for (int i = 0; i < lists->stderrList->size; i++) {
+            Stderr* s = lists->stderrList->list[i];
+            if (s) {
+                free(s->name);
+                free(s->from);
+                free(s);
+            }
+        }
+        free(lists->stderrList->list);
+        free(lists->stderrList);
+    }
+
+    // Free FileList
+    if (lists->fileList) {
+        for (int i = 0; i < lists->fileList->size; i++) {
+            FlowFile* f = lists->fileList->list[i];
+            if (f) {
+                free(f->name);
+                free(f->path);
+                free(f);
+            }
+        }
+        free(lists->fileList->list);
+        free(lists->fileList);
+    }
+}
+
+// Free TreeNodeList
+void freeTreeNodeList(TreeNodeList* list) {
+    if (!list) return;
+    for (int i = 0; i < list->size; i++) {
+        free(list->names[i]);
+        // Do not free list->nodes[i] here; they are freed in freeTree
+    }
+    free(list->names);
+    free(list->nodes);
+    free(list);
+}
+
+// Wrapper function
+void freeMem(ListContainer* lists, TreeNodeList* nodeList, TreeNode* root) {
+    freeListsMems(lists, nodeList);
+    freeTreeNodeList(nodeList);
+    freeTree(root);
 }
