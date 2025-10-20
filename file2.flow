@@ -1,0 +1,9 @@
+node=read_file
+command=cat
+
+file=input_file
+name=result.txt
+
+pipe=read_pipe
+from=input_file
+to=read_file

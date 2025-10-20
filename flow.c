@@ -71,13 +71,13 @@ int main(int argc, char *argv[]) {
         freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
         return 1;
     }
-
+    
     if (detectCycles(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount)) {
         fprintf(stderr, "Flow validation failed: cyclic or invalid dependency found.\n");
         freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
         return 1;
     }
-
+    
     executeFlow(argv[2], nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
 
     freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
@@ -604,7 +604,7 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
                 FILE *input = fopen(files[i].fileName, "r");
                 if (!input) {
                     perror("Error opening input file");
-                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
                     _exit(1);
                 }
 
@@ -615,12 +615,29 @@ void executeFlow(const char *blockName, nodeDef *nodes, int nodeCount, pipeDef *
                         perror("write to pipe failed");
                         fclose(input);
                         flowDepth--;
-                        freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount); 
+                        freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
                         _exit(1);
                     }
                 }
 
+                if (ferror(input)) {
+                    perror("Error reading input file");
+                    fclose(input);
+                    flowDepth--;
+                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
+                    _exit(1);
+                }
+
                 fclose(input);
+
+                if (fflush(stdout) == EOF) {
+                    perror("fflush failed");
+                    flowDepth--;
+                    freeMem(nodes, nodeCount, pipes, pipeCount, concats, concatCount, stderrs, stderrCount, files, fileCount);
+                    _exit(1);
+                }
+
+                flowDepth--;
                 return;
             }
             else if (isOutput) {
